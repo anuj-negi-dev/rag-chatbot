@@ -18,14 +18,12 @@ async function frontDeskSupport(state: typeof StateAnnotation.State) {
     ...state.messages,
   ]);
 
-  console.log("AI Support Response: ", supportResponse);
-
   const CATEGORIZATION_SYSTEM_PROMPT = `You are an expert customer support routing system.
   Your job is to detect whether a customer support representative is routing a user to a marketing team or learning support team, or if they are just responding conversationally`;
 
   const CATEGORIZATION_HUMAN_PROMPT = `The previous conversation is an interaction between a customer support representative and a user.
   Extract whether the representative is routing the user to a marketing team or a customer support team, or whether they are just responding conversationally.
-  Respond with and JSON object having a single key "" with one of the following values
+  Respond with and JSON object having a single key "nextRepresentative" with one of the following values
   If they want to route the user to the marketing team, respond with "MARKETING"
   If they want to route the user to the learning team, respond with "LEARNING"
   Otherwise respond with "RESPOND"
@@ -38,6 +36,7 @@ async function frontDeskSupport(state: typeof StateAnnotation.State) {
         content: CATEGORIZATION_SYSTEM_PROMPT,
       },
       ...state.messages,
+      supportResponse,
       {
         role: "user",
         content: CATEGORIZATION_HUMAN_PROMPT,
@@ -50,8 +49,6 @@ async function frontDeskSupport(state: typeof StateAnnotation.State) {
     }
   );
 
-  console.log("AI categorization Response: ", categorizationResponse);
-
   const categorizationOutput = JSON.parse(
     categorizationResponse.content as string
   );
@@ -63,15 +60,52 @@ async function frontDeskSupport(state: typeof StateAnnotation.State) {
 }
 
 function marketingSupport(state: typeof StateAnnotation.State) {
+  console.log("Handling by marketing team");
   return state;
 }
 
 function learningSupport(state: typeof StateAnnotation.State) {
+  console.log("Handling by marketing team");
   return state;
+}
+
+function whoIsNext(state: typeof StateAnnotation.State) {
+  if (state.nextRepresentative.includes("MARKETING")) return "marketingSupport";
+  else if (state.nextRepresentative.includes("LEARNING"))
+    return "learningSupport";
+  else return "__end__";
 }
 
 const workflow = new StateGraph(StateAnnotation)
   .addNode("frontDeskSupport", frontDeskSupport)
   .addNode("marketingSupport", marketingSupport)
   .addNode("learningSupport", learningSupport)
-  .addEdge("__start__", "frontDeskSupport");
+  .addEdge("__start__", "frontDeskSupport")
+  .addConditionalEdges("frontDeskSupport", whoIsNext, {
+    marketingSupport: "marketingSupport",
+    learningSupport: "learningSupport",
+    __end__: "__end__",
+  })
+  .addEdge("marketingSupport", "__end__")
+  .addEdge("learningSupport", "__end__");
+
+const app = workflow.compile();
+
+async function main() {
+  const stream = await app.stream({
+    messages: [
+      {
+        role: "user",
+        content:
+          "Hi, i have 1 year of experince of react, suggest me a course according to that",
+      },
+    ],
+  });
+  for await (const value of stream) {
+    console.log("------ STEP -------");
+    console.log(value);
+    console.log("------ STEP -------");
+  }
+}
+
+main();
