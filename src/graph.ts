@@ -2,11 +2,15 @@ import { END, StateGraph } from "@langchain/langgraph";
 import { StateAnnotation } from "./state";
 import { model } from "./model";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { getOffers } from "./tools";
+import { getOffers, kbRetriever } from "./tools";
 import type { AIMessage } from "@langchain/core/messages";
+
 
 const marketingTools = [getOffers];
 const marketingToolNode = new ToolNode(marketingTools);
+
+const learningTools = [kbRetriever];
+const learningToolNode = new ToolNode(learningTools);
 
 async function frontDeskSupport(state: typeof StateAnnotation.State) {
   const SYSTEM_PROMPT = `You are frontline support staff for Coder's Gyan, an ed-tech company that helps software developers excel in their careers through practical web development and Generative AI Courses.
@@ -94,9 +98,29 @@ async function marketingSupport(state: typeof StateAnnotation.State) {
   };
 }
 
-function learningSupport(state: typeof StateAnnotation.State) {
-  console.log("Handling by marketing team");
-  return state;
+async function learningSupport(state: typeof StateAnnotation.State) {
+  const SYSTEM_PROMPT = `You are part of the learning support team of Coder's Gyan, an ed-tech company that helps software developers excel in their careers through practical web development and Generative AI Courses.
+  You specialize in handling questions related to curriculum, course content, course duration, and other learning-related queries.
+  Answer clearly and concisely, and in a friendly manner.
+  For any query outside of learning support, politely inform the user that you are part of the learning team and cannot help with that query, and redirect the user to the appropriate team, such as the marketing team for promo codes, discounts, offers, etc.
+  Important: Answer only using given context, else say I don't have enough information to answer
+  Important: Call retrieve_learning_knowledge_base max 3 times if the tool result is not relevant to the original query.
+  `;
+  let trimmedHistory = state.messages;
+  if (trimmedHistory.at(-1)?.getType() === "ai") {
+    trimmedHistory = trimmedHistory.slice(0, -1);
+  }
+  const llmWithTools = model.bindTools(learningTools);
+  const learningResponse = await llmWithTools.invoke([
+    {
+      role: "system",
+      content: SYSTEM_PROMPT,
+    },
+    ...trimmedHistory,
+  ]);
+  return {
+    messages: [learningResponse],
+  };
 }
 
 function whoIsNext(state: typeof StateAnnotation.State) {
@@ -114,11 +138,20 @@ function isMarketingToolNext(state: typeof StateAnnotation.State) {
   return "__end__";
 }
 
+function isLearningToolNext(state: typeof StateAnnotation.State) {
+  const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
+  if (lastMessage.tool_calls?.length) {
+    return "learningTools";
+  }
+  return "__end__";
+}
+
 const workflow = new StateGraph(StateAnnotation)
   .addNode("frontDeskSupport", frontDeskSupport)
   .addNode("marketingSupport", marketingSupport)
   .addNode("learningSupport", learningSupport)
   .addNode("marketingTools", marketingToolNode)
+  .addNode("learningTools", learningToolNode)
   .addEdge("__start__", "frontDeskSupport")
   .addConditionalEdges("frontDeskSupport", whoIsNext, {
     marketingSupport: "marketingSupport",
@@ -130,7 +163,11 @@ const workflow = new StateGraph(StateAnnotation)
     __end__: END,
   })
   .addEdge("marketingTools", "marketingSupport")
-  .addEdge("learningSupport", "__end__");
+  .addConditionalEdges("learningSupport", isLearningToolNext, {
+    learningTools: "learningTools",
+    __end__: END,
+  })
+  .addEdge("learningTools", "learningSupport");
 
 const app = workflow.compile();
 
@@ -139,14 +176,14 @@ async function main() {
     messages: [
       {
         role: "user",
-        content: "Hi, can i get a discount cupon codes",
+        content: "Hi, i am not good at backend, which course should i take?",
       },
     ],
   });
   for await (const value of stream) {
-    console.log("------ STEP -------");
+    console.log("------ STEP START -------");
     console.log(value);
-    console.log("------ STEP -------");
+    console.log("------ STEP END -------");
   }
 }
 

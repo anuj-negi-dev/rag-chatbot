@@ -1,4 +1,6 @@
 import { tool } from "@langchain/core/tools";
+import { createRetrieverTool } from "langchain/tools/retriever";
+import { vectorStore } from "./indexDocs";
 
 export const getOffers = tool(
   () => {
@@ -22,3 +24,11 @@ export const getOffers = tool(
     description: "Call this tool to get the available offer and discounts",
   }
 );
+
+const retriever = vectorStore.asRetriever();
+
+export const kbRetriever = createRetrieverTool(retriever, {
+  name: "retrieve_learning_knowledge_base",
+  description:
+    "Call this tool to get the knowledge about the course and syllabus",
+});

@@ -12,7 +12,7 @@ const pinecone = new PineconeClient();
 
 const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX_NAME!);
 
-const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
+export const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
   pineconeIndex,
   maxConcurrency: 5,
 });
@@ -45,4 +45,4 @@ export default async function prepareDoc(filePath: string) {
   console.log("Done ✅");
 }
 
-prepareDoc("./codersgyan_courses.pdf");
+// prepareDoc("./codersgyan_courses.pdf");
