@@ -1,6 +1,12 @@
-import { StateGraph } from "@langchain/langgraph";
+import { END, StateGraph } from "@langchain/langgraph";
 import { StateAnnotation } from "./state";
 import { model } from "./model";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { getOffers } from "./tools";
+import type { AIMessage } from "@langchain/core/messages";
+
+const marketingTools = [getOffers];
+const marketingToolNode = new ToolNode(marketingTools);
 
 async function frontDeskSupport(state: typeof StateAnnotation.State) {
   const SYSTEM_PROMPT = `You are frontline support staff for Coder's Gyan, an ed-tech company that helps software developers excel in their careers through practical web development and Generative AI Courses.
@@ -59,9 +65,33 @@ async function frontDeskSupport(state: typeof StateAnnotation.State) {
   };
 }
 
-function marketingSupport(state: typeof StateAnnotation.State) {
-  console.log("Handling by marketing team");
-  return state;
+async function marketingSupport(state: typeof StateAnnotation.State) {
+  const llmWithTools = model.bindTools(marketingTools);
+
+  const SYSTEM_PROMPT = `You are part of the marketing team of Coder's Gyan, an ed-tech company that helps software developers excel in their careers through practical web development and Generative AI Courses.
+  You are specialize in handling question like promo codes, discounts, offers, etc.
+  Answer clearly and concisely, and in a friendly manner.
+  For any query related to the outside of marketing, politely inform the user that you are part of the marketing team and cannot help with that query and redirect the user to appropriate team like for curriculum, course content, course duration, etc. We have learning team for that.
+  Important: Answer only using given context, else say I don't have enough information to answer.
+  `;
+
+  let trimmedHistory = state.messages;
+
+  if (trimmedHistory.at(-1)?.getType() === "ai") {
+    trimmedHistory = trimmedHistory.slice(0, -1);
+  }
+
+  const marketingResponse = await llmWithTools.invoke([
+    {
+      role: "system",
+      content: SYSTEM_PROMPT,
+    },
+    ...trimmedHistory,
+  ]);
+
+  return {
+    messages: [marketingResponse],
+  };
 }
 
 function learningSupport(state: typeof StateAnnotation.State) {
@@ -76,17 +106,30 @@ function whoIsNext(state: typeof StateAnnotation.State) {
   else return "__end__";
 }
 
+function isMarketingToolNext(state: typeof StateAnnotation.State) {
+  const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
+  if (lastMessage.tool_calls?.length) {
+    return "marketingTools";
+  }
+  return "__end__";
+}
+
 const workflow = new StateGraph(StateAnnotation)
   .addNode("frontDeskSupport", frontDeskSupport)
   .addNode("marketingSupport", marketingSupport)
   .addNode("learningSupport", learningSupport)
+  .addNode("marketingTools", marketingToolNode)
   .addEdge("__start__", "frontDeskSupport")
   .addConditionalEdges("frontDeskSupport", whoIsNext, {
     marketingSupport: "marketingSupport",
     learningSupport: "learningSupport",
     __end__: "__end__",
   })
-  .addEdge("marketingSupport", "__end__")
+  .addConditionalEdges("marketingSupport", isMarketingToolNext, {
+    marketingTools: "marketingTools",
+    __end__: END,
+  })
+  .addEdge("marketingTools", "marketingSupport")
   .addEdge("learningSupport", "__end__");
 
 const app = workflow.compile();
@@ -96,8 +139,7 @@ async function main() {
     messages: [
       {
         role: "user",
-        content:
-          "Hi, i have 1 year of experince of react, suggest me a course according to that",
+        content: "Hi, can i get a discount cupon codes",
       },
     ],
   });

@@ -13,8 +13,14 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.56",
     "@langchain/core": "^0.3.77",
     "@langchain/groq": "^0.2.4",
-    "@langchain/langgraph": "^0.4.9"
+    "@langchain/langgraph": "^0.4.9",
+    "@langchain/openai": "^0.6.13",
+    "@langchain/pinecone": "^0.2.0",
+    "@langchain/textsplitters": "^0.1.0",
+    "@pinecone-database/pinecone": "^6.1.2",
+    "pdf-parse": "^1.1.1"
   }
 }
